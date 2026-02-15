@@ -1,5 +1,6 @@
 import '../database/database_helper.dart';
 import '../models/entity_model.dart'; // We will create this next
+import 'package:sqflite/sqflite.dart';
 
 class EntityRepository {
   final dbHelper = DatabaseHelper.instance;
