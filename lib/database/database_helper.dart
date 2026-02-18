@@ -17,11 +17,13 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
+    // Increment version if you ever need to migrate without deleting,
+    // but for now we are doing a Hard Reset.
     return await openDatabase(path, version: 1, onCreate: _createDB);
   }
 
   Future _createDB(Database db, int version) async {
-    // 1. Users Table [Source 59]
+    // 1. Users Table
     await db.execute('''
       CREATE TABLE users (
         user_id TEXT PRIMARY KEY,
@@ -30,7 +32,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. Entities Table [Source 59]
+    // 2. Entities Table
     await db.execute('''
       CREATE TABLE entities (
         entity_id TEXT PRIMARY KEY,
@@ -41,18 +43,19 @@ class DatabaseHelper {
       )
     ''');
 
-    // 3. Accounts Table [Source 59]
+    // 3. Accounts Table (UPDATED: Added starting_balance_cents)
     await db.execute('''
       CREATE TABLE accounts (
         account_id TEXT PRIMARY KEY,
         user_id TEXT,
         teller_access_token TEXT,
         institution_name TEXT,
+        starting_balance_cents INTEGER DEFAULT 0, 
         FOREIGN KEY (user_id) REFERENCES users (user_id)
       )
     ''');
 
-    // 4. Transactions Table [Source 34]
+    // 4. Transactions Table
     await db.execute('''
       CREATE TABLE transactions (
         transaction_id TEXT PRIMARY KEY,
@@ -60,20 +63,20 @@ class DatabaseHelper {
         amount_cents INTEGER,
         merchant_name TEXT,
         date TEXT,
-        status TEXT, -- PENDING, FINALIZED
+        status TEXT,
         FOREIGN KEY (account_id) REFERENCES accounts (account_id)
       )
     ''');
 
-    // 5. Splits Table (UPDATED: Added 'category' column) [Source 133]
+    // 5. Splits Table
     await db.execute('''
       CREATE TABLE splits (
         split_id TEXT PRIMARY KEY,
         transaction_id TEXT,
         entity_id TEXT,
         amount_cents INTEGER,
-        category TEXT, -- THIS WAS MISSING
-        logic_type TEXT, 
+        category TEXT,
+        logic_type TEXT,
         FOREIGN KEY (transaction_id) REFERENCES transactions (transaction_id),
         FOREIGN KEY (entity_id) REFERENCES entities (entity_id)
       )

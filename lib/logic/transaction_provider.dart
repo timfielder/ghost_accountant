@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:intl/intl.dart'; // Required for currency formatting
-import '../data/database/database_helper.dart';
-import '../data/models/entity_model.dart';
+import 'package:intl/intl.dart';
+import '../database/database_helper.dart';
+import '../models/entity_model.dart';
 
 class TransactionProvider with ChangeNotifier {
   final dbHelper = DatabaseHelper.instance;
@@ -13,7 +13,8 @@ class TransactionProvider with ChangeNotifier {
   List<Map<String, dynamic>> get queue => _queue;
   List<Entity> get entities => _entities;
 
-  // 1. Load Initial Data
+  // --- 1. CORE METHODS ---
+
   Future<void> loadInitialData(String userId) async {
     final db = await dbHelper.database;
     final entityMaps = await db.query('entities', where: 'user_id = ?', whereArgs: [userId]);
@@ -21,16 +22,53 @@ class TransactionProvider with ChangeNotifier {
     await _refreshQueue();
   }
 
-  // 2. Seed Test Data (Reset)
-  Future<void> seedDatabase() async {
+  Future<void> resetDatabase() async {
     final db = await dbHelper.database;
+    await db.delete('entities');
     await db.delete('transactions');
     await db.delete('splits');
-    _fireDrillIndex = 0;
-    await _refreshQueue();
+    await db.delete('accounts'); // Ensure accounts are wiped too
+    _entities = [];
+    _queue = [];
+    notifyListeners();
   }
 
-  // 3. Helper: Refresh Queue
+  Future<void> addEntity(String name, {required bool isPrimary}) async {
+    final db = await dbHelper.database;
+    final id = 'ent_${DateTime.now().millisecondsSinceEpoch}';
+
+    await db.insert('entities', {
+      'entity_id': id,
+      'user_id': 'user_01',
+      'entity_name': name,
+      'is_primary': isPrimary ? 1 : 0
+    });
+
+    await loadInitialData('user_01');
+  }
+
+  // UPDATED: Now accepts startingBalance
+  Future<void> addAccount(String name, double startingBalance) async {
+    final db = await dbHelper.database;
+    final id = 'acct_${DateTime.now().millisecondsSinceEpoch}';
+
+    await db.insert('accounts', {
+      'account_id': id,
+      'user_id': 'user_01',
+      'institution_name': name,
+      'teller_access_token': 'manual_entry',
+      'starting_balance_cents': (startingBalance * 100).round(),
+    });
+    notifyListeners();
+  }
+
+  Future<List<Map<String, dynamic>>> getAccounts() async {
+    final db = await dbHelper.database;
+    return await db.query('accounts', where: 'user_id = ?', whereArgs: ['user_01']);
+  }
+
+  // --- 2. QUEUE MANAGEMENT ---
+
   Future<void> _refreshQueue() async {
     final db = await dbHelper.database;
     _queue = await db.query(
@@ -42,30 +80,14 @@ class TransactionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // 4. Swipe Right (Backward Compatibility Wrapper)
-  Future<void> swipeRight(String transactionId, Entity targetEntity, {String category = 'Uncategorized'}) async {
-    final amount = await _getTransactionAmount(transactionId);
-    await finalizeSplit(
-        transactionId: transactionId,
-        splitRows: [
-          {'entityId': targetEntity.id, 'amount': amount, 'category': category}
-        ],
-        saveAsRule: false
-    );
-  }
+  // --- 3. ACTIONS ---
 
-  // 5. FINALIZE LOGIC (Updated to Fix Persistence Bug)
-  Future<void> finalizeSplit({
-    required String transactionId,
-    required List<Map<String, dynamic>> splitRows,
-    bool saveAsRule = false
-  }) async {
+  Future<void> finalizeSplit({required String transactionId, required List<Map<String, dynamic>> splitRows}) async {
     final db = await dbHelper.database;
 
-    // A. Insert Splits
     for (var row in splitRows) {
       await db.insert('splits', {
-        'split_id': DateTime.now().millisecondsSinceEpoch.toString() + '_' + row['entityId'],
+        'split_id': '${DateTime.now().millisecondsSinceEpoch}_${row['entityId']}',
         'transaction_id': transactionId,
         'entity_id': row['entityId'],
         'amount_cents': row['amount'],
@@ -74,78 +96,115 @@ class TransactionProvider with ChangeNotifier {
       });
     }
 
-    // B. Mark Finalized (This removes it from the 'PENDING' query)
     await db.update('transactions', {'status': 'FINALIZED'}, where: 'transaction_id = ?', whereArgs: [transactionId]);
-
-    // C. Force Refresh
-    // Instead of manually removing it from the local list, we re-query the DB.
-    // This guarantees the UI matches the Database state.
     await _refreshQueue();
   }
 
-  // 6. FIRE DRILL CYCLE (Fixes the $2.00 Format)
-  int _fireDrillIndex = 0;
+  // --- 4. DASHBOARD METRICS ---
 
-  Future<void> triggerFireDrill(Function(String title, String body, String payload) onNotify) async {
+  Future<Map<String, dynamic>> getDashboardMetrics() async {
     final db = await dbHelper.database;
-    final newTxId = 'tx_notify_${DateTime.now().millisecondsSinceEpoch}';
 
-    final scenarios = [
-      {
-        'merchant': 'Facebook Advertisement',
-        'amount': 200, // $2.00
-        'desc': 'Facebook Ads'
-      },
-      {
-        'merchant': '7-Eleven',
-        'amount': 4523, // $45.23
-        'desc': 'Gas or Groceries?'
-      },
-      {
-        'merchant': 'AMZN Mktp US',
-        'amount': 19200, // $192.00
-        'desc': 'Amazon (Needs Split)'
-      },
-      {
-        'merchant': 'Fiverr',
-        'amount': 15465, // $154.65
-        'desc': 'Fiverr (Gig Revenue)'
+    final splits = await db.rawQuery('SELECT * FROM splits');
+    final entities = await db.query('entities');
+    final accounts = await db.query('accounts');
+
+    double totalNet = 0;
+    List<Map<String, dynamic>> streamLeaderboard = [];
+    List<Map<String, dynamic>> accountLeaderboard = [];
+
+    // Streams
+    for (var entity in entities) {
+      String id = entity['entity_id'] as String;
+      String name = entity['entity_name'] as String;
+      double entityNet = 0;
+
+      for (var s in splits) {
+        if (s['entity_id'] == id) {
+          entityNet += (s['amount_cents'] as int);
+        }
       }
-    ];
 
-    final currentScenario = scenarios[_fireDrillIndex % scenarios.length];
-    _fireDrillIndex++;
+      streamLeaderboard.add({'id': id, 'name': name, 'net': entityNet / 100});
+      totalNet += entityNet;
+    }
 
-    await db.insert('transactions', {
-      'transaction_id': newTxId,
-      'account_id': 'acct_1',
-      'amount_cents': currentScenario['amount'],
-      'merchant_name': currentScenario['merchant'],
-      'date': DateTime.now().toIso8601String(),
-      'status': 'PENDING',
-    });
+    // Accounts (Calculated from Transactions + Starting Balance in a real app)
+    final txs = await db.query('transactions');
+    for (var acct in accounts) {
+      String acctId = acct['account_id'] as String;
+      String name = acct['institution_name'] as String;
+      int starting = (acct['starting_balance_cents'] as int?) ?? 0;
+      double currentBalance = starting.toDouble(); // Start with baseline
 
-    await _refreshQueue();
+      for (var tx in txs) {
+        if (tx['account_id'] == acctId) {
+          currentBalance += (tx['amount_cents'] as int);
+        }
+      }
 
-    // FORMATTING FIX: Ensure 2 decimal places ($2.00)
-    final double amount = (currentScenario['amount'] as int) / 100.0;
-    final formattedAmount = NumberFormat.simpleCurrency().format(amount);
+      accountLeaderboard.add({'id': acctId, 'name': name, 'net': currentBalance / 100});
+    }
 
-    onNotify(
-        "New Transaction",
-        "$formattedAmount at ${currentScenario['merchant']}",
-        newTxId
-    );
+    return {
+      'netProfit': totalNet / 100,
+      'streamLeaderboard': streamLeaderboard,
+      'accountLeaderboard': accountLeaderboard,
+    };
   }
 
-  // Helper
-  Future<int> _getTransactionAmount(String transactionId) async {
-    if (_queue.any((t) => t['transaction_id'] == transactionId)) {
-      final tx = _queue.firstWhere((t) => t['transaction_id'] == transactionId);
-      return tx['amount_cents'] as int;
-    }
+  // --- 5. P&L ENGINES ---
+
+  Future<Map<String, dynamic>> getEntityPnL(String entityId) async {
     final db = await dbHelper.database;
-    final result = await db.query('transactions', where: 'transaction_id = ?', whereArgs: [transactionId]);
-    return result.first['amount_cents'] as int;
+    final splits = await db.rawQuery('SELECT * FROM splits WHERE entity_id = ?', [entityId]);
+    return _calculatePnLFromRows(splits);
+  }
+
+  Future<Map<String, dynamic>> getAccountPnL(String accountId) async {
+    final db = await dbHelper.database;
+    final results = await db.rawQuery('''
+      SELECT s.category, s.amount_cents 
+      FROM splits s
+      JOIN transactions t ON s.transaction_id = t.transaction_id
+      WHERE t.account_id = ?
+    ''', [accountId]);
+    return _calculatePnLFromRows(results);
+  }
+
+  Map<String, dynamic> _calculatePnLFromRows(List<Map<String, Object?>> rows) {
+    Map<String, double> income = {};
+    Map<String, double> expenses = {};
+    Map<String, double> transfers = {};
+    double netIncome = 0;
+
+    for (var row in rows) {
+      String category = row['category'] as String;
+      double amount = (row['amount_cents'] as int) / 100.0;
+      String type = _getCategoryType(category);
+
+      if (type == 'INCOME') {
+        income[category] = (income[category] ?? 0) + amount;
+        netIncome += amount;
+      } else if (type == 'EXPENSE') {
+        expenses[category] = (expenses[category] ?? 0) + amount;
+        netIncome -= amount;
+      } else {
+        transfers[category] = (transfers[category] ?? 0) + amount;
+      }
+    }
+
+    return {
+      'netIncome': netIncome,
+      'income': income,
+      'expenses': expenses,
+      'transfers': transfers
+    };
+  }
+
+  String _getCategoryType(String category) {
+    if (category.contains('Revenue') || category.contains('Income') || category == 'Credit') return 'INCOME';
+    if (category.contains('Transfer') || category.contains('Owner')) return 'TRANSFER';
+    return 'EXPENSE';
   }
 }

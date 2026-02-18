@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/constants.dart';
 import '../../logic/transaction_provider.dart';
-import '../../data/models/entity_model.dart';
+import '../../models/entity_model.dart'; // FIXED IMPORT PATH
 
 class SplitRowData {
   String id;
@@ -38,12 +38,12 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
   @override
   void initState() {
     super.initState();
-    // Default to Primary Entity + Uncategorized
     final provider = context.read<TransactionProvider>();
     final totalCents = widget.transaction['amount_cents'];
     final double totalDollars = totalCents / 100.0;
 
     if (provider.entities.isNotEmpty) {
+      // Default to Primary Entity or first available
       final primary = provider.entities.firstWhere((e) => e.isPrimary, orElse: () => provider.entities.first);
 
       rows.add(SplitRowData(
@@ -83,18 +83,13 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
     final totalCents = widget.transaction['amount_cents'];
     double totalDollars = totalCents / 100.0;
 
-    // 1. AUTO-SPAWN CHECK
+    // AUTO-SPAWN CHECK: If user touches the slider and there is only 1 row, automatically add the second row
     if (rows.length == 1) {
       final provider = context.read<TransactionProvider>();
       final currentEntityId = rows.first.entityId;
+      // Try to find a different entity to suggest
+      final nextEntity = provider.entities.firstWhere((e) => e.id != currentEntityId, orElse: () => provider.entities.first);
 
-      // Find a different entity to spawn
-      final nextEntity = provider.entities.firstWhere(
-              (e) => e.id != currentEntityId,
-          orElse: () => provider.entities.first
-      );
-
-      // Only spawn if valid
       if (nextEntity.id != currentEntityId) {
         setState(() {
           rows.add(SplitRowData(
@@ -110,6 +105,7 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
 
     setState(() {
       double newPercent = 0.0;
+
       if (sliderValue != null) newPercent = sliderValue;
       if (textValue != null) {
         double amount = double.tryParse(textValue) ?? 0.0;
@@ -122,23 +118,27 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
       final activeRow = rows.firstWhere((r) => r.id == activeRowId);
       activeRow.percent = newPercent;
 
+      // Update text if slider moved
       if (sliderValue != null) {
         activeRow.amountController.text = (totalDollars * newPercent).toStringAsFixed(2);
       }
 
+      // WATERFALL LOGIC: Adjust the *other* rows to equal 100%
+      // Simplified Waterfall for 2 items: 1 - newPercent
       double remainder = 1.0 - newPercent;
+
       for (var row in rows) {
         if (row.id != activeRowId) {
           row.percent = remainder < 0 ? 0 : remainder;
           row.amountController.text = (totalDollars * row.percent).toStringAsFixed(2);
-          remainder = 0;
+          remainder = 0; // Only fill the first available bucket for now (MVP)
           break;
         }
       }
     });
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final provider = context.read<TransactionProvider>();
     final txId = widget.transaction['transaction_id'];
 
@@ -155,20 +155,24 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
       }
     }
 
-    provider.finalizeSplit(
-        transactionId: txId,
-        splitRows: finalSplits,
-        saveAsRule: false
+    await provider.finalizeSplit(
+      transactionId: txId,
+      splitRows: finalSplits,
     );
 
-    Navigator.pop(context);
-    widget.onComplete(true);
+    if (mounted) {
+      Navigator.pop(context);
+      widget.onComplete(true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final entities = context.watch<TransactionProvider>().entities;
     final totalCents = widget.transaction['amount_cents'];
+
+    // BRAND COLOR
+    final tfeGreen = Theme.of(context).colorScheme.primary;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -179,10 +183,10 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
       ),
       child: Column(
         children: [
-          Container(width: 40, height: 4, color: Colors.grey.shade300),
+          Container(width: 40, height: 4, color: Colors.black12),
           const SizedBox(height: 20),
           Text(widget.transaction['merchant_name'], style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          Text("\$${(totalCents / 100).toStringAsFixed(2)}", style: const TextStyle(fontSize: 18, color: Colors.grey)),
+          Text("\$${(totalCents / 100).toStringAsFixed(2)}", style: const TextStyle(fontSize: 18, color: Colors.black54)),
           const Divider(height: 20),
 
           Expanded(
@@ -191,12 +195,11 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final row = rows[index];
-
                 return Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.black12), // Crisp Border
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
                     children: [
@@ -227,7 +230,7 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               decoration: const InputDecoration(
                                 prefixText: "\$",
-                                border: OutlineInputBorder(),
+                                border: OutlineInputBorder(), // Uses Theme Defaults (Green Focus)
                                 contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                               ),
                               onChanged: (val) => _updateRow(row.id, null, val),
@@ -235,7 +238,7 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                           ),
                           if (rows.length > 1)
                             IconButton(
-                              icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                              icon: const Icon(Icons.close, size: 18, color: Colors.black54),
                               onPressed: () => _removeRow(index),
                             )
                         ],
@@ -247,7 +250,8 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                             child: Slider(
                               value: row.percent,
                               min: 0.0, max: 1.0,
-                              activeColor: Colors.blueGrey,
+                              activeColor: tfeGreen, // FORCE BRAND GREEN
+                              thumbColor: tfeGreen,
                               onChanged: (val) => _updateRow(row.id, val, null),
                             ),
                           ),
@@ -256,18 +260,19 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                             child: Container(
                               height: 36,
                               padding: const EdgeInsets.symmetric(horizontal: 8),
-                              decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+                              decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8)),
                               child: DropdownButtonHideUnderline(
                                 child: DropdownButton<String>(
                                   value: row.category == 'Uncategorized' ? null : row.category,
                                   hint: const Text("Category", style: TextStyle(fontSize: 12)),
                                   isExpanded: true,
-                                  items: AppConstants.irsCategories.map<DropdownMenuItem<String>>((cat) {
+                                  // Use the static getter we created in AppConstants
+                                  items: AppConstants.allCategories.map<DropdownMenuItem<String>>((cat) {
                                     return DropdownMenuItem<String>(
                                       value: cat['name'] as String,
                                       child: Row(
                                         children: [
-                                          Icon(cat['icon'], size: 16, color: Colors.blueGrey),
+                                          Icon(cat['icon'], size: 16, color: tfeGreen), // GREEN ICONS
                                           const SizedBox(width: 5),
                                           Expanded(
                                               child: Text(
@@ -296,17 +301,16 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
 
           TextButton.icon(
             onPressed: _addSplitRow,
-            icon: const Icon(Icons.add_circle, color: Colors.blueGrey),
-            label: const Text("Add Split Line"),
+            icon: Icon(Icons.add_circle, color: tfeGreen), // GREEN ICON
+            label: Text("Add Split Line", style: TextStyle(color: tfeGreen)),
           ),
           const SizedBox(height: 10),
-
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: _submit,
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueGrey,
+                backgroundColor: tfeGreen, // FORCE BRAND GREEN
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
