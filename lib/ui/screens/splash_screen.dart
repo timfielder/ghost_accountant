@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/transaction_provider.dart';
-import 'onboarding_screen.dart'; // NEW IMPORT
-import 'home_wrapper.dart';      // NEW IMPORT
+import 'onboarding_screen.dart';
+import 'home_wrapper.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -14,8 +14,6 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
   late AnimationController _mainController;
   late Animation<double> _logoOpacity;
-
-  // Tagline Animations
   late Animation<double> _tagline1Opacity;
   late Animation<double> _tagline2Opacity;
   late Animation<double> _tagline3Opacity;
@@ -24,53 +22,50 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   void initState() {
     super.initState();
 
-    // 1. Setup the Master Timeline (3 Seconds Total)
+    // CINEMATIC TIMING: 5 Seconds Total
     _mainController = AnimationController(
         vsync: this,
-        duration: const Duration(seconds: 3)
+        duration: const Duration(seconds: 5)
     );
 
-    // 2. Define the Sequence (Intervals 0.0 to 1.0)
+    // 1. Logo Fades In (0s - 2.0s)
     _logoOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
         CurvedAnimation(parent: _mainController, curve: const Interval(0.0, 0.4, curve: Curves.easeIn))
     );
 
+    // 2. Taglines Cascade In (Slower Intervals)
+
+    // "One Business." (2.0s - 3.0s)
     _tagline1Opacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: _mainController, curve: const Interval(0.5, 0.65, curve: Curves.easeOut))
+        CurvedAnimation(parent: _mainController, curve: const Interval(0.4, 0.6, curve: Curves.easeOut))
     );
 
+    // "Multiple Streams." (3.0s - 4.0s)
     _tagline2Opacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: _mainController, curve: const Interval(0.65, 0.8, curve: Curves.easeOut))
+        CurvedAnimation(parent: _mainController, curve: const Interval(0.6, 0.8, curve: Curves.easeOut))
     );
 
+    // "One Tool." (4.0s - 5.0s)
     _tagline3Opacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: _mainController, curve: const Interval(0.8, 0.95, curve: Curves.easeOut))
+        CurvedAnimation(parent: _mainController, curve: const Interval(0.8, 1.0, curve: Curves.easeOut))
     );
 
     _mainController.forward();
-
-    // 3. Load Data & Decide Destination
     _initApp();
   }
 
   Future<void> _initApp() async {
     final provider = context.read<TransactionProvider>();
-
-    // Load Data to check if entities exist
     await provider.loadInitialData('user_01');
 
-    // Ensure animation finishes (3s) + slight buffer
-    await Future.delayed(const Duration(seconds: 4));
+    // SAFETY BUFFER: 6 Seconds (Ensures animation finishes before nav)
+    await Future.delayed(const Duration(seconds: 6));
 
     if (mounted) {
-      // THE TRAFFIC COP LOGIC
       Widget nextScreen;
-
       if (provider.entities.isEmpty) {
-        // No Data? -> Setup Mode
         nextScreen = const OnboardingScreen();
       } else {
-        // Has Data? -> Dashboard Mode
         nextScreen = const HomeWrapper();
       }
 
@@ -78,7 +73,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         PageRouteBuilder(
           pageBuilder: (_, __, ___) => nextScreen,
           transitionsBuilder: (_, a, __, c) => FadeTransition(opacity: a, child: c),
-          transitionDuration: const Duration(milliseconds: 800),
+          transitionDuration: const Duration(milliseconds: 1200), // Slow transition
         ),
       );
     }
@@ -92,41 +87,41 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    const taglineStyle = TextStyle(
-        fontFamily: 'Roboto',
-        color: Colors.white,
-        fontSize: 12,
-        letterSpacing: 1.2,
-        height: 1.5
-    );
+    // COMPASS PALETTE
+    const sjNavy = Color(0xFF00264C);   // Foundation
+    const sjTeal = Color(0xFF4A7D8F);   // Action
+    const sjGold = Color(0xFFE0B42D);   // Value / Highlight
 
-    const highlightStyle = TextStyle(
-      fontFamily: 'Roboto',
-      color: Color(0xFF355E3B), // Hunter Green
-      fontWeight: FontWeight.bold,
-      fontSize: 12,
-      letterSpacing: 1.2,
+    // BASE TEXT STYLE
+    const baseStyle = TextStyle(
+        fontFamily: 'Roboto',
+        fontSize: 24,           // IMPACT SIZE
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1.2,
+        height: 1.5             // Breathable line height
     );
 
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: const Color(0xFFF5F7FA), // Clean Slate Background
+
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // LOGO & TITLE
             FadeTransition(
               opacity: _logoOpacity,
               child: Column(
                 children: [
-                  Image.asset('assets/images/logo.png', width: 120, height: 120),
+                  Image.asset('assets/images/logo.png', width: 140, height: 140),
                   const SizedBox(height: 20),
                   const Text(
                     "B E A M S",
                     style: TextStyle(
                       fontFamily: 'Montserrat',
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
+                      color: sjNavy,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w900,
                       letterSpacing: 12.0,
                     ),
                   ),
@@ -134,22 +129,37 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
               ),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 40),
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            // THE MANIFESTO STACK
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 FadeTransition(
                   opacity: _tagline1Opacity,
-                  child: const Text("One Business.  ", style: taglineStyle),
+                  child: Text("One Business.", style: baseStyle.copyWith(color: sjNavy)),
                 ),
                 FadeTransition(
                   opacity: _tagline2Opacity,
-                  child: const Text("Multiple Streams.  ", style: taglineStyle),
+                  child: Text("Multiple Streams.", style: baseStyle.copyWith(color: sjTeal)),
                 ),
+
+                const SizedBox(height: 8), // Spacer before the "Stamp"
+
                 FadeTransition(
                   opacity: _tagline3Opacity,
-                  child: const Text("One Tool.", style: highlightStyle),
+                  // THE HIGHLIGHT BLOCK
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: sjNavy, // Navy Background
+                        borderRadius: BorderRadius.circular(4)
+                    ),
+                    child: Text(
+                        "One Tool.",
+                        style: baseStyle.copyWith(color: sjGold) // Gold Text
+                    ),
+                  ),
                 ),
               ],
             ),

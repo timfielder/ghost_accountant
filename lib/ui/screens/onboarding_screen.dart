@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // NEW IMPORT
 import '../../logic/transaction_provider.dart';
 import 'home_wrapper.dart';
 
@@ -32,21 +33,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (_primaryController.text.isEmpty) return;
 
     final provider = context.read<TransactionProvider>();
+
+    // 1. REQUEST PERMISSIONS (Moved here from the Debug Button)
+    final plugin = FlutterLocalNotificationsPlugin();
+    final androidImplementation = plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
+    if (androidImplementation != null) {
+      await androidImplementation.requestNotificationsPermission();
+    }
+
+    // 2. Clear & Rebuild DB
     await provider.resetDatabase();
 
-    // 1. Create Streams (Entities)
+    // 3. Create Streams (Entities)
     await provider.addEntity(_primaryController.text, isPrimary: true);
     for (var c in _streamControllers) {
       if (c.text.isNotEmpty) await provider.addEntity(c.text, isPrimary: false);
     }
 
-    // 2. Create Accounts with Balances
+    // 4. Create Accounts with Balances
     for (var i = 0; i < _accountControllers.length; i++) {
       if (_accountControllers[i].text.isNotEmpty) {
         final balanceText = _balanceControllers[i].text;
-        // Strip '$' and ',' to parse correctly
         final balance = double.tryParse(balanceText.replaceAll(r'$', '').replaceAll(',', '')) ?? 0.0;
-
         await provider.addAccount(_accountControllers[i].text, balance);
       }
     }
@@ -69,6 +79,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               const Text("WELCOME TO BEAMS", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2.0, color: Colors.grey)),
               const SizedBox(height: 10),
               const Text("System Setup", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, height: 1.1)),
+
               const SizedBox(height: 30),
 
               // SECTION 1: STREAMS
@@ -102,7 +113,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Row(
                   children: [
-                    // Name
                     Expanded(
                       flex: 2,
                       child: TextField(
@@ -114,7 +124,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    // Balance
                     Expanded(
                       flex: 1,
                       child: TextField(
@@ -136,6 +145,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               )),
 
               const SizedBox(height: 40),
+
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(

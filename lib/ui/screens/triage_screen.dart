@@ -1,21 +1,73 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // REQUIRED FOR ALERTS
 import '../../logic/transaction_provider.dart';
-import '../widgets/triage_bottom_sheet.dart';
+import '../widgets/quick_triage_card.dart';
 
 class TriageScreen extends StatelessWidget {
   const TriageScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final tfeGreen = Theme.of(context).colorScheme.primary;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text("ALLOCATE"),
-        actions: [],
+        centerTitle: true,
+      ),
+      // THE "LIVE FIRE" SIMULATION BUTTON
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Colors.grey.shade800,
+        icon: const Icon(Icons.notifications_active, color: Colors.white),
+        label: const Text("Simulate Alert", style: TextStyle(color: Colors.white)),
+        onPressed: () async {
+          final provider = context.read<TransactionProvider>();
+          final plugin = FlutterLocalNotificationsPlugin();
+          final androidImplementation = plugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+
+          if (androidImplementation != null) {
+            await androidImplementation.requestNotificationsPermission();
+          }
+
+          // Generate Ghost Data
+          final int amountCents = 4500 + (DateTime.now().millisecondsSinceEpoch % 15000);
+          final String txId = 'tx_${DateTime.now().millisecondsSinceEpoch}';
+          final double amountDol = amountCents / 100.0;
+          final String merchant = "Amazon Web Services";
+
+          final db = await provider.dbHelper.database;
+          await db.insert('transactions', {
+            'transaction_id': txId,
+            'account_id': 'acct_123',
+            'amount_cents': amountCents,
+            'merchant_name': merchant,
+            'date': DateTime.now().toIso8601String(),
+            'status': 'PENDING'
+          });
+
+          // ignore: use_build_context_synchronously
+          provider.loadInitialData('user_01');
+
+          const androidDetails = AndroidNotificationDetails(
+            'channel_id',
+            'Transaction Alerts',
+            importance: Importance.max,
+            priority: Priority.high,
+            showWhen: true,
+            color: Color(0xFF00264C), // SJ NAVY BRAND
+          );
+          const iosDetails = DarwinNotificationDetails();
+          const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+
+          await plugin.show(
+              0,
+              'BEAMS • Action Required', // FIXED: Pluralized BEAMS
+              '$merchant: \$${amountDol.toStringAsFixed(2)}',
+              details,
+              payload: txId
+          );
+        },
       ),
       body: Consumer<TransactionProvider>(
         builder: (context, provider, child) {
@@ -24,7 +76,7 @@ class TriageScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.check_circle_outline, size: 64, color: Colors.black12), // Subtle Black, not BlueGrey
+                  Icon(Icons.check_circle_outline, size: 64, color: Colors.black12),
                   const SizedBox(height: 10),
                   Text("ALL CAUGHT UP", style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.black26)),
                 ],
@@ -32,73 +84,12 @@ class TriageScreen extends StatelessWidget {
             );
           }
 
-          return ListView.separated(
+          return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: provider.queue.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 12), // Spacing instead of divider
             itemBuilder: (context, index) {
               final tx = provider.queue[index];
-              final amount = (tx['amount_cents'] as int) / 100.0;
-              final currency = NumberFormat.simpleCurrency().format(amount);
-              final isAmazon = tx['merchant_name'].toString().contains('Amazon');
-
-              return Container(
-                decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: Colors.black12, width: 1.5), // SHARP BORDER
-                    borderRadius: BorderRadius.circular(4), // Architectural/Square
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))
-                    ]
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-
-                  // Leading Icon: Crisp Black or Green
-                  leading: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isAmazon ? Colors.orange.withOpacity(0.1) : tfeGreen.withOpacity(0.05),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isAmazon ? Icons.shopping_cart : Icons.credit_card,
-                      color: isAmazon ? Colors.deepOrange : tfeGreen,
-                      size: 20,
-                    ),
-                  ),
-
-                  title: Text(
-                    tx['merchant_name'],
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-
-                  subtitle: Text(
-                    tx['date'].toString().substring(0, 10),
-                    style: TextStyle(color: Colors.black54, fontSize: 12), // Darker Grey
-                  ),
-
-                  trailing: Text(
-                    currency,
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: tfeGreen // Money is Green
-                    ),
-                  ),
-
-                  onTap: () {
-                    showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        builder: (context) => TriageBottomSheet(
-                          transaction: tx,
-                          onComplete: (success) {},
-                        )
-                    );
-                  },
-                ),
-              );
+              return QuickTriageCard(transaction: tx);
             },
           );
         },

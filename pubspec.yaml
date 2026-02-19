@@ -48,6 +48,8 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   flutter_launcher_icons: ^0.13.1
+  path_provider: ^2.1.2
+  share_plus: ^10.0.0
 
 flutter_launcher_icons:
   android: "launcher_icon"
@@ -55,6 +57,8 @@ flutter_launcher_icons:
   image_path: "assets/images/logo.png" # Must match where you put the file
   min_sdk_android: 21 # Required for modern Android
   remove_alpha_ios: true # Fills transparency with black (High-Agency)
+  adaptive_icon_background: "#121212"  # Ink Black Background
+  adaptive_icon_foreground: "assets/images/logo.png" # The Prism Layer
   background_color: "#121212" # Matches your Void Black theme
 
 dev_dependencies:
@@ -67,6 +71,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_native_splash: ^2.4.0
+
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -111,3 +117,10 @@ flutter:
   # see https://flutter.dev/to/font-from-package
   assets:
     - assets/images/logo.png
+
+flutter_native_splash:
+  color: "#121212"               # Forces the background to be Ink Black
+  image: "assets/images/logo.png" # Uses your centered Prism logo
+  android_12:
+    color: "#121212"             # Required for Pixel 8 (Android 12+)
+    image: "assets/images/logo.png"

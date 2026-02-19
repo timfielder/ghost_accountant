@@ -9,39 +9,59 @@ class DashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // BEAMS COLORS
-    final tfeGreen = Theme.of(context).primaryColor;
+    // BRAND COLORS
+    final tfeGreen = Theme.of(context).colorScheme.primary;
+    final sjNavy = Theme.of(context).colorScheme.secondary;
     final currency = NumberFormat.simpleCurrency();
 
-    // Text Style for the Header (High Contrast White)
-    const headerStyle = TextStyle(
-        letterSpacing: 4.0, // Wide spacing for luxury feel
+    // Text Style for the Header (High Contrast Navy)
+    final headerStyle = TextStyle(
+        letterSpacing: 4.0,
         fontWeight: FontWeight.bold,
         fontSize: 22,
-        color: Colors.white
+        color: sjNavy
     );
 
     return Scaffold(
       appBar: AppBar(
-        // CUSTOM LOGOTYPE: B E [A] M S
+        backgroundColor: Colors.white,
+        elevation: 0, // Removed Shadow for a crisp "Flat" look
+        scrolledUnderElevation: 0, // Prevents color shift on scroll
+        iconTheme: IconThemeData(color: sjNavy),
+
+        // CUSTOM LOGOTYPE: B E [LOGO] M S
         title: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Text("B E", style: headerStyle),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4.0),
-              // Your Prism Logo acts as the "A"
-              child: Image.asset(
-                'assets/images/logo.png',
-                height: 28,
-                fit: BoxFit.contain,
+            Text("B E ", style: headerStyle),
+
+            // DIRECT LOGO - SCALED UP
+            Transform.scale(
+              scale: 1.5,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                child: Image.asset(
+                  'assets/images/logo.png', // Source of Truth
+                  height: 38,
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
-            const Text("M S", style: headerStyle),
+
+            Text(" M S", style: headerStyle),
           ],
         ),
         centerTitle: true,
+
+        // THE NAVY DIVIDER
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(4.0),
+          child: Container(
+            color: sjNavy, // The Foundation Color
+            height: 4.0,
+          ),
+        ),
       ),
       body: FutureBuilder<Map<String, dynamic>>(
         future: context.watch<TransactionProvider>().getDashboardMetrics(),
@@ -81,7 +101,6 @@ class DashboardScreen extends StatelessWidget {
                   name: item['name'],
                   amount: item['net'],
                   onTap: () {
-                    // Navigate to Entity P&L
                     Navigator.push(context, MaterialPageRoute(
                         builder: (context) => PnLScreen(
                           entityId: item['id'],
@@ -104,7 +123,6 @@ class DashboardScreen extends StatelessWidget {
                   amount: item['net'],
                   isAccount: true,
                   onTap: () {
-                    // Navigate to Account P&L
                     Navigator.push(context, MaterialPageRoute(
                         builder: (context) => PnLScreen(
                           entityId: item['id'],
@@ -123,7 +141,6 @@ class DashboardScreen extends StatelessWidget {
   }
 }
 
-// Reusable Card Component
 class _PerformanceCard extends StatelessWidget {
   final String name;
   final double amount;
@@ -142,7 +159,7 @@ class _PerformanceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final currency = NumberFormat.simpleCurrency();
     final isProfitable = amount >= 0;
-    final tfeGreen = Theme.of(context).primaryColor;
+    final tfeGreen = Theme.of(context).colorScheme.primary;
 
     return InkWell(
       onTap: onTap,

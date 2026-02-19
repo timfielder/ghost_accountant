@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dashboard_screen.dart';
 import 'triage_screen.dart';
-// import 'settings_screen.dart'; // We will build this next
+import 'settings_screen.dart'; // IMPORT THE NEW SCREEN
 
 class HomeWrapper extends StatefulWidget {
   const HomeWrapper({super.key});
@@ -17,7 +17,7 @@ class _HomeWrapperState extends State<HomeWrapper> {
   final List<Widget> _screens = [
     const DashboardScreen(), // Home = Pulse
     const TriageScreen(),    // Work = Allocate
-    const Center(child: Text("SYSTEM SETTINGS (Coming Soon)")), // Settings
+    const SettingsScreen(),  // System = Command Center (LINKED)
   ];
 
   @override

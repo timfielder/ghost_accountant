@@ -5,19 +5,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'logic/transaction_provider.dart';
 import 'ui/screens/splash_screen.dart';
 import 'ui/widgets/triage_bottom_sheet.dart';
+import 'ui/widgets/smart_triage_sheet.dart';
 
-// GLOBAL KEYS & PLUGINS
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// THIS IS THE MISSING MAIN FUNCTION
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. NOTIFICATION SETUP
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
   const DarwinInitializationSettings initializationSettingsDarwin = DarwinInitializationSettings();
-
   const InitializationSettings initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
       iOS: initializationSettingsDarwin
@@ -36,10 +33,10 @@ void main() async {
                 showModalBottomSheet(
                     context: context,
                     isScrollControlled: true,
-                    builder: (ctx) => TriageBottomSheet(transaction: tx, onComplete: (s){})
+                    builder: (ctx) => SmartTriageSheet(transaction: tx)
                 );
               } catch (e) {
-                // Transaction not found
+                print("Transaction not found in queue: $e");
               }
             }
           });
@@ -62,10 +59,12 @@ class GhostAccountantApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // BEAMS PALETTE
-    const tfeGreen = Color(0xFF355E3B); // Hunter Green
-    const tfeBlack = Color(0xFF121212); // Ink Black (Void)
-    const tfePaper = Color(0xFFFAFAFA); // Crisp White Paper
+    // BRAND PALETTE: Success Journeys Hub
+    const sjNavy   = Color(0xFF00264C); // Primary Background / Headers
+    const sjGold   = Color(0xFFE0B42D); // Highlights / Value
+    const sjTeal   = Color(0xFF4A7D8F); // Primary Action
+    const sjBlue   = Color(0xFF99CCFF); // Secondary Accents
+    const sjSilver = Color(0xFFCFCFCF); // Backgrounds / Cards
 
     return MaterialApp(
       title: 'BEAMS',
@@ -73,28 +72,30 @@ class GhostAccountantApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        scaffoldBackgroundColor: tfePaper,
+        scaffoldBackgroundColor: const Color(0xFFF5F7FA), // Very light grey for contrast against Navy
 
         // Color Scheme
         colorScheme: ColorScheme.fromSeed(
-          seedColor: tfeGreen,
-          primary: tfeGreen,
+          seedColor: sjNavy,
+          primary: sjTeal,
           onPrimary: Colors.white,
-          secondary: tfeBlack,
+          secondary: sjNavy,
           surface: Colors.white,
+          tertiary: sjGold,
+          error: const Color(0xFFB00020),
         ),
 
         // Typography
         textTheme: TextTheme(
-          displayLarge: GoogleFonts.montserrat(fontWeight: FontWeight.bold, color: tfeBlack),
-          titleLarge: GoogleFonts.montserrat(fontWeight: FontWeight.w600, color: tfeBlack),
-          bodyLarge: GoogleFonts.roboto(fontSize: 16, color: tfeBlack),
-          bodyMedium: GoogleFonts.roboto(fontSize: 14, color: tfeBlack),
+          displayLarge: GoogleFonts.montserrat(fontWeight: FontWeight.bold, color: sjNavy),
+          titleLarge: GoogleFonts.montserrat(fontWeight: FontWeight.w600, color: sjNavy),
+          bodyLarge: GoogleFonts.roboto(fontSize: 16, color: sjNavy),
+          bodyMedium: GoogleFonts.roboto(fontSize: 14, color: sjNavy),
         ),
 
-        // Component Styles - HIGH CONTRAST HEADER
+        // Component Styles
         appBarTheme: AppBarTheme(
-          backgroundColor: tfeBlack, // Ink Black Header
+          backgroundColor: sjNavy,
           elevation: 0,
           centerTitle: true,
           iconTheme: const IconThemeData(color: Colors.white),
@@ -102,14 +103,15 @@ class GhostAccountantApp extends StatelessWidget {
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: Colors.white,
-              letterSpacing: 1.2
+              letterSpacing: 1.5
           ),
         ),
+
         elevatedButtonTheme: ElevatedButtonThemeData(
             style: ElevatedButton.styleFrom(
-              backgroundColor: tfeGreen,
+              backgroundColor: sjTeal,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               textStyle: GoogleFonts.montserrat(fontWeight: FontWeight.bold),
             )
         ),
