@@ -22,30 +22,23 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   void initState() {
     super.initState();
 
-    // CINEMATIC TIMING: 5 Seconds Total
     _mainController = AnimationController(
         vsync: this,
-        duration: const Duration(seconds: 5)
+        duration: const Duration(seconds: 4)
     );
 
-    // 1. Logo Fades In (0s - 2.0s)
     _logoOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
         CurvedAnimation(parent: _mainController, curve: const Interval(0.0, 0.4, curve: Curves.easeIn))
     );
 
-    // 2. Taglines Cascade In (Slower Intervals)
-
-    // "One Business." (2.0s - 3.0s)
     _tagline1Opacity = Tween<double>(begin: 0.0, end: 1.0).animate(
         CurvedAnimation(parent: _mainController, curve: const Interval(0.4, 0.6, curve: Curves.easeOut))
     );
 
-    // "Multiple Streams." (3.0s - 4.0s)
     _tagline2Opacity = Tween<double>(begin: 0.0, end: 1.0).animate(
         CurvedAnimation(parent: _mainController, curve: const Interval(0.6, 0.8, curve: Curves.easeOut))
     );
 
-    // "One Tool." (4.0s - 5.0s)
     _tagline3Opacity = Tween<double>(begin: 0.0, end: 1.0).animate(
         CurvedAnimation(parent: _mainController, curve: const Interval(0.8, 1.0, curve: Curves.easeOut))
     );
@@ -58,8 +51,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     final provider = context.read<TransactionProvider>();
     await provider.loadInitialData('user_01');
 
-    // SAFETY BUFFER: 6 Seconds (Ensures animation finishes before nav)
-    await Future.delayed(const Duration(seconds: 6));
+    await Future.delayed(const Duration(seconds: 4));
 
     if (mounted) {
       Widget nextScreen;
@@ -73,7 +65,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         PageRouteBuilder(
           pageBuilder: (_, __, ___) => nextScreen,
           transitionsBuilder: (_, a, __, c) => FadeTransition(opacity: a, child: c),
-          transitionDuration: const Duration(milliseconds: 1200), // Slow transition
+          transitionDuration: const Duration(milliseconds: 1200),
         ),
       );
     }
@@ -87,28 +79,25 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    // COMPASS PALETTE
-    const sjNavy = Color(0xFF00264C);   // Foundation
-    const sjTeal = Color(0xFF4A7D8F);   // Action
-    const sjGold = Color(0xFFE0B42D);   // Value / Highlight
+    const sjNavy = Color(0xFF00264C);
+    const sjTeal = Color(0xFF4A7D8F);
+    const sjGold = Color(0xFFE0B42D);
 
-    // BASE TEXT STYLE
     const baseStyle = TextStyle(
         fontFamily: 'Roboto',
-        fontSize: 24,           // IMPACT SIZE
+        fontSize: 24,
         fontWeight: FontWeight.bold,
         letterSpacing: 1.2,
-        height: 1.5             // Breathable line height
+        height: 1.5
     );
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA), // Clean Slate Background
-
+      // CHANGED: Pure white to blend with your logo background
+      backgroundColor: Colors.white,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // LOGO & TITLE
             FadeTransition(
               opacity: _logoOpacity,
               child: Column(
@@ -128,10 +117,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                 ],
               ),
             ),
-
             const SizedBox(height: 40),
-
-            // THE MANIFESTO STACK
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -143,21 +129,18 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                   opacity: _tagline2Opacity,
                   child: Text("Multiple Streams.", style: baseStyle.copyWith(color: sjTeal)),
                 ),
-
-                const SizedBox(height: 8), // Spacer before the "Stamp"
-
+                const SizedBox(height: 8),
                 FadeTransition(
                   opacity: _tagline3Opacity,
-                  // THE HIGHLIGHT BLOCK
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
-                        color: sjNavy, // Navy Background
+                        color: sjNavy,
                         borderRadius: BorderRadius.circular(4)
                     ),
                     child: Text(
                         "One Tool.",
-                        style: baseStyle.copyWith(color: sjGold) // Gold Text
+                        style: baseStyle.copyWith(color: sjGold)
                     ),
                   ),
                 ),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../logic/transaction_provider.dart';
+import '../../models/entity_model.dart';
 import 'triage_bottom_sheet.dart';
 
 class QuickTriageCard extends StatefulWidget {
@@ -17,61 +18,341 @@ class QuickTriageCard extends StatefulWidget {
 class _QuickTriageCardState extends State<QuickTriageCard> {
   String? _selectedEntityId;
   String? _selectedCategory;
+  final TextEditingController _noteController = TextEditingController();
+
   bool _isProcessing = false;
   bool _isSuggestion = false;
 
   @override
   void initState() {
     super.initState();
-    _loadSuggestion();
+    _loadState();
   }
 
-  Future<void> _loadSuggestion() async {
+  Future<void> _loadState() async {
     final provider = context.read<TransactionProvider>();
-    final suggestion = await provider.getStrictSuggestion(widget.transaction['merchant_name']);
+    final txId = widget.transaction['transaction_id'];
+    final draft = provider.triageDrafts[txId];
 
-    if (suggestion != null && mounted) {
-      setState(() {
-        _selectedEntityId = suggestion['entityId'];
-        _selectedCategory = suggestion['category'];
-        _isSuggestion = true;
-      });
+    if (draft != null) {
+      if (mounted) {
+        setState(() {
+          if (draft['entityId'] != null) _selectedEntityId = draft['entityId'];
+          if (draft['category'] != null) _selectedCategory = draft['category'];
+          if (draft['note'] != null) _noteController.text = draft['note'];
+        });
+      }
+    } else {
+      final suggestion = await provider.getStrictSuggestion(widget.transaction['merchant_name']);
+      if (suggestion != null && mounted) {
+        setState(() {
+          _selectedEntityId = suggestion['entityId'];
+          _selectedCategory = suggestion['category'];
+          _isSuggestion = true;
+        });
+      }
     }
+  }
+
+  void _showSmartMatchInfo() {
+    final sjNavy = Theme.of(context).colorScheme.secondary;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.auto_awesome, color: sjNavy, size: 24),
+                  const SizedBox(width: 12),
+                  Text("Smart Match Engine", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: sjNavy)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                  "BEAMS uses Historical Exact Matching.\n\nIf you have 3 consecutive transactions from the same merchant with the same category, BEAMS will auto-suggest the split.",
+                  style: TextStyle(fontSize: 14, height: 1.5, color: Colors.black87)
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(backgroundColor: sjNavy, foregroundColor: Colors.white),
+                  child: const Text("GOT IT"),
+                ),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTaxLogicSheet() {
+    final sjNavy = Theme.of(context).colorScheme.secondary;
+    final sjTeal = Theme.of(context).colorScheme.primary;
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (context) => DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, controller) => ListView(
+            controller: controller,
+            padding: const EdgeInsets.all(24),
+            children: [
+              Center(child: Container(width: 40, height: 4, color: Colors.grey.shade300)),
+              const SizedBox(height: 20),
+              Text("Why these categories?", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: sjNavy)),
+              const SizedBox(height: 16),
+
+              _buildInfoSection("1. Tax Prep Efficiency", "If your records match the IRS Schedule C forms, filing taxes takes minutes, not hours.", Icons.timer, sjTeal),
+              _buildInfoSection("2. Audit Defense", "Using these standard categories creates an instant, clean paper trail.", Icons.shield, sjTeal),
+
+              const Divider(height: 40),
+              Text("Mapping Modern Expenses", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: sjNavy)),
+              const SizedBox(height: 10),
+              _buildMappingRow("Software / SaaS", "Office Expense (or Software Subscriptions)"),
+              _buildMappingRow("Web Hosting", "Advertising"),
+              _buildMappingRow("Online Courses", "Education & Training"),
+
+              const Divider(height: 40),
+              Text("The 'Sub-Category' Strategy", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: sjNavy)),
+              const SizedBox(height: 10),
+              Text("Use the IRS Category as the 'Parent' and your transaction note as the 'Child'.", style: TextStyle(color: Colors.grey.shade700, height: 1.5)),
+
+              const SizedBox(height: 40),
+              ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("GOT IT"))
+            ],
+          ),
+        )
+    );
+  }
+
+  Widget _buildInfoSection(String title, String body, IconData icon, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(body, style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.4)),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMappingRow(String modern, String irs) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(child: Text(modern, style: const TextStyle(fontWeight: FontWeight.w500))),
+          const Icon(Icons.arrow_right_alt, size: 16, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(child: Text(irs, style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).primaryColor))),
+        ],
+      ),
+    );
+  }
+
+  void _openStreamPicker(List<Entity> entities) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.4,
+        maxChildSize: 0.8,
+        expand: false,
+        builder: (_, scrollController) => Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text("Select Stream", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                controller: scrollController,
+                itemCount: entities.length,
+                itemBuilder: (ctx, index) {
+                  final e = entities[index];
+                  final bool isSelected = _selectedEntityId == e.id;
+
+                  return ListTile(
+                    leading: CircleAvatar(
+                        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                        child: Icon(e.isPrimary ? Icons.security : Icons.layers, color: Theme.of(context).colorScheme.primary, size: 20)
+                    ),
+                    title: Text(e.name, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w600)),
+                    subtitle: Text(e.isPrimary ? "Organization" : "Business Stream", style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                    trailing: isSelected ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary) : null,
+                    onTap: () {
+                      setState(() {
+                        _selectedEntityId = e.id;
+                        _isSuggestion = false;
+                      });
+                      context.read<TransactionProvider>().saveDraft(widget.transaction['transaction_id'], entityId: e.id);
+                      Navigator.pop(ctx);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openCategoryPicker(List<Map<String, dynamic>> categories) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scrollController) => Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("Select Category", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                  TextButton(
+                    onPressed: _showTaxLogicSheet,
+                    child: Text("Why these?", style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
+                  )
+                ],
+              ),
+            ),
+
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                controller: scrollController,
+                itemCount: categories.length,
+                itemBuilder: (ctx, index) {
+                  final cat = categories[index];
+                  final bool isSelected = _selectedCategory == cat['name'];
+
+                  return ListTile(
+                    leading: CircleAvatar(
+                        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                        child: Icon(cat['icon'], color: Theme.of(context).colorScheme.primary, size: 20)
+                    ),
+                    title: Text(cat['name'], style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w600)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(cat['desc'], style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                        if (cat['example'] != null)
+                          Text("Ex: ${cat['example']}", style: TextStyle(fontSize: 11, color: Colors.grey.shade400, fontStyle: FontStyle.italic)),
+                      ],
+                    ),
+                    trailing: isSelected ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary) : null,
+                    onTap: () {
+                      setState(() {
+                        _selectedCategory = cat['name'];
+                        _isSuggestion = false;
+                      });
+                      context.read<TransactionProvider>().saveDraft(widget.transaction['transaction_id'], category: cat['name']);
+                      Navigator.pop(ctx);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _handleDirectCommit() async {
     if (_selectedEntityId == null || _selectedCategory == null) return;
-
     setState(() => _isProcessing = true);
-    final provider = context.read<TransactionProvider>();
-    final amountCents = widget.transaction['amount_cents'] as int;
 
-    final List<Map<String, dynamic>> singleSplit = [{
-      'entityId': _selectedEntityId,
-      'amount': amountCents,
-      'category': _selectedCategory
-    }];
+    try {
+      final provider = context.read<TransactionProvider>();
+      final amountCents = widget.transaction['amount_cents'] as int;
 
-    await provider.finalizeSplit(
-        transactionId: widget.transaction['transaction_id'],
-        splitRows: singleSplit
-    );
+      // Note: Direct commit treats the single card note as both transaction note AND split memo
+      final List<Map<String, dynamic>> singleSplit = [{
+        'entityId': _selectedEntityId,
+        'amount': amountCents,
+        'category': _selectedCategory,
+        'memo': _noteController.text // Use note as memo for single split
+      }];
+
+      // Update draft with Note before committing
+      if (_noteController.text.isNotEmpty) {
+        provider.saveDraft(widget.transaction['transaction_id'], note: _noteController.text);
+      }
+
+      await provider.finalizeSplit(
+          transactionId: widget.transaction['transaction_id'],
+          splitRows: singleSplit,
+          note: _noteController.text
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error committing: $e"), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
   }
 
   void _openAdvancedSplit() {
+    // Save draft state before switching
+    if (_noteController.text.isNotEmpty) {
+      context.read<TransactionProvider>().saveDraft(widget.transaction['transaction_id'], note: _noteController.text);
+    }
     showModalBottomSheet(
         context: context,
         isScrollControlled: true,
-        builder: (context) => TriageBottomSheet(
-          transaction: widget.transaction,
-          onComplete: (success) {},
-        )
+        builder: (context) => TriageBottomSheet(transaction: widget.transaction, onComplete: (success) {})
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // BRAND COLORS
     final sjNavy = Theme.of(context).colorScheme.secondary;
     final sjTeal = Theme.of(context).colorScheme.primary;
 
@@ -83,15 +364,13 @@ class _QuickTriageCardState extends State<QuickTriageCard> {
     final accountName = widget.transaction['institution_name'] ?? 'Unknown Acct';
     final bool canCommit = _selectedEntityId != null && _selectedCategory != null;
 
-    // INTELLIGENT CONTEXT
-    // If amount is negative, it's a Credit (Income). If positive, it's a Debit (Expense).
-    // Note: Adjust logic if your API uses a different sign convention.
     final bool isCredit = amountCents < 0;
+    final List<Map<String, dynamic>> categoryList = isCredit ? AppConstants.creditCategories : AppConstants.debitCategories;
 
-    // FILTER THE LISTS (Progressive Disclosure)
-    final List<Map<String, dynamic>> categoryList = isCredit
-        ? AppConstants.creditCategories
-        : AppConstants.debitCategories;
+    String streamDisplay = "Stream";
+    if (_selectedEntityId != null) {
+      try { streamDisplay = provider.entities.firstWhere((e) => e.id == _selectedEntityId).name; } catch (_) {}
+    }
 
     return Card(
       elevation: 4,
@@ -103,7 +382,6 @@ class _QuickTriageCardState extends State<QuickTriageCard> {
       child: Container(
         decoration: BoxDecoration(
           border: Border(left: BorderSide(
-            // Visual Cue: Gold for Logic, Teal for Manual (Brand Alignment)
               color: _isSuggestion ? const Color(0xFFE0B42D) : sjTeal,
               width: 4
           )),
@@ -114,28 +392,26 @@ class _QuickTriageCardState extends State<QuickTriageCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
 
-              // SUGGESTION BANNER
               if (_isSuggestion)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Icon(Icons.auto_awesome, size: 12, color: Theme.of(context).colorScheme.tertiary),
-                      const SizedBox(width: 4),
-                      Text(
-                          "SMART MATCH FOUND",
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.tertiary,
-                              letterSpacing: 1.0
-                          )
-                      ),
-                    ],
+                  child: GestureDetector(
+                    onTap: _showSmartMatchInfo,
+                    child: Row(
+                      children: [
+                        Icon(Icons.auto_awesome, size: 12, color: Theme.of(context).colorScheme.tertiary),
+                        const SizedBox(width: 4),
+                        Text(
+                            "SMART MATCH FOUND",
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.tertiary, letterSpacing: 1.0)
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.info_outline, size: 12, color: Theme.of(context).colorScheme.tertiary.withOpacity(0.7)),
+                      ],
+                    ),
                   ),
                 ),
 
-              // --- TOP ROW: Merchant & Amount ---
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,10 +420,7 @@ class _QuickTriageCardState extends State<QuickTriageCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                            widget.transaction['merchant_name'],
-                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)
-                        ),
+                        Text(widget.transaction['merchant_name'], style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                         const SizedBox(height: 6),
                         Row(
                           children: [
@@ -163,13 +436,7 @@ class _QuickTriageCardState extends State<QuickTriageCard> {
                   ),
                   Text(
                     currency.format(amount.abs()),
-                    style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        // COLOR PSYCHOLOGY: Teal for Income, Navy for Expense (No "Red Sea")
-                        color: isCredit ? sjTeal : sjNavy,
-                        letterSpacing: -0.5
-                    ),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: isCredit ? sjTeal : sjNavy, letterSpacing: -0.5),
                   ),
                 ],
               ),
@@ -178,69 +445,54 @@ class _QuickTriageCardState extends State<QuickTriageCard> {
               const Divider(height: 1),
               const SizedBox(height: 12),
 
-              // --- MIDDLE ROW: Selectors ---
               Row(
                 children: [
                   Expanded(
                     flex: 4,
-                    child: Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade200)
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _selectedEntityId,
-                          hint: Text("Stream", style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                          isExpanded: true,
-                          icon: Icon(Icons.expand_more, size: 18, color: Colors.grey.shade600),
-                          items: provider.entities.map((e) => DropdownMenuItem(
-                            value: e.id,
-                            child: Text(e.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
-                          )).toList(),
-                          onChanged: (val) => setState(() {
-                            _selectedEntityId = val;
-                            _isSuggestion = false;
-                          }),
+                    child: InkWell(
+                      onTap: () => _openStreamPicker(provider.entities),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        height: 44,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
+                        child: Row(
+                          children: [
+                            Expanded(
+                                child: Text(
+                                    streamDisplay,
+                                    style: TextStyle(fontSize: 13, color: _selectedEntityId == null ? Colors.grey.shade600 : Colors.black87, fontWeight: _selectedEntityId == null ? FontWeight.normal : FontWeight.w600),
+                                    overflow: TextOverflow.ellipsis
+                                )
+                            ),
+                            Icon(Icons.expand_more, size: 18, color: Colors.grey.shade600)
+                          ],
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
+
                   Expanded(
                     flex: 5,
-                    child: Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade200)
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _selectedCategory,
-                          hint: Text("Category", style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                          isExpanded: true,
-                          icon: Icon(Icons.expand_more, size: 18, color: Colors.grey.shade600),
-                          // CHANGED: Uses the filtered list (Credits vs Debits)
-                          items: categoryList.map((cat) => DropdownMenuItem(
-                            value: cat['name'] as String,
-                            child: Row(
-                              children: [
-                                Icon(cat['icon'], size: 14, color: Colors.grey),
-                                const SizedBox(width: 6),
-                                Expanded(child: Text(cat['name'], style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
-                              ],
+                    child: InkWell(
+                      onTap: () => _openCategoryPicker(categoryList),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        height: 44,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
+                        child: Row(
+                          children: [
+                            Expanded(
+                                child: Text(
+                                    _selectedCategory ?? "Category",
+                                    style: TextStyle(fontSize: 13, color: _selectedCategory == null ? Colors.grey.shade600 : Colors.black87, fontWeight: _selectedCategory == null ? FontWeight.normal : FontWeight.w600),
+                                    overflow: TextOverflow.ellipsis
+                                )
                             ),
-                          )).toList(),
-                          onChanged: (val) => setState(() {
-                            _selectedCategory = val;
-                            _isSuggestion = false;
-                          }),
+                            Icon(Icons.expand_more, size: 18, color: Colors.grey.shade600)
+                          ],
                         ),
                       ),
                     ),
@@ -248,9 +500,36 @@ class _QuickTriageCardState extends State<QuickTriageCard> {
                 ],
               ),
 
+              // UPDATED: HIGH VISIBILITY MEMO FIELD
               const SizedBox(height: 12),
+              TextField(
+                controller: _noteController,
+                decoration: InputDecoration(
+                  labelText: "Memo",
+                  hintText: "e.g. Microphone, Client Dinner",
+                  hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                  isDense: true,
+                  filled: true,
+                  fillColor: Colors.grey.shade50, // Slight tint to make it look like a box
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300)
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300) // Visible border
+                  ),
+                  prefixIcon: Icon(Icons.notes, size: 18, color: sjTeal),
+                ),
+                style: const TextStyle(fontSize: 13),
+                onChanged: (val) {
+                  provider.saveDraft(widget.transaction['transaction_id'], note: val);
+                },
+              ),
 
-              // --- BOTTOM ROW: Actions ---
+              const SizedBox(height: 8),
+
               Row(
                 children: [
                   TextButton.icon(
