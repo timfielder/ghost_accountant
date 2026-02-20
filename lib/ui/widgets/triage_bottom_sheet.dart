@@ -72,7 +72,7 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
     if (index == 0) return; // Cannot remove Anchor
     setState(() {
       rows.removeAt(index);
-      _recalculateAnchor();
+      _recalculateAnchor(); // Logic automatically returns money to the Umbrella/Anchor
     });
   }
 
@@ -389,7 +389,6 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                                   padding: const EdgeInsets.symmetric(horizontal: 10),
                                   decoration: BoxDecoration(
                                       color: Colors.white,
-                                      // Specific Border Error for Stream Field
                                       border: Border.all(
                                           color: isStreamError ? Colors.red : Colors.grey.shade300,
                                           width: isStreamError ? 1.5 : 1.0
@@ -404,7 +403,6 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                                             style: TextStyle(
                                                 fontWeight: FontWeight.w700,
                                                 fontSize: 13,
-                                                // FIXED: Consistently Teal (Action) or Red (Error)
                                                 color: isStreamError ? Colors.red : sjTeal
                                             ),
                                             overflow: TextOverflow.ellipsis
@@ -423,7 +421,8 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                             ),
                             if (!isAnchor)
                               IconButton(
-                                icon: const Icon(Icons.close, size: 18, color: Colors.black38),
+                                // UPDATED: Trash Can Icon for deleting rows
+                                icon: const Icon(Icons.delete_outline, size: 20, color: Colors.grey),
                                 onPressed: () => _removeRow(index),
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
@@ -484,6 +483,7 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                                   padding: const EdgeInsets.symmetric(horizontal: 10),
                                   decoration: BoxDecoration(
                                       color: Colors.white,
+                                      // Specific Border Error for Category Field
                                       border: Border.all(
                                           color: row.hasError && row.category == null ? Colors.red : Colors.grey.shade300,
                                           width: row.hasError && row.category == null ? 1.5 : 1.0

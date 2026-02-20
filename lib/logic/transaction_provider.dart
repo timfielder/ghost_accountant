@@ -22,21 +22,9 @@ class TransactionProvider with ChangeNotifier {
   Future<void> loadInitialData(String userId) async {
     final db = await dbHelper.database;
 
-    // --- MIGRATION: ENSURE COLUMNS EXIST ---
-    // 1. Transaction Notes
-    try {
-      await db.execute("ALTER TABLE transactions ADD COLUMN notes TEXT");
-    } catch (e) {
-      // Column likely exists
-    }
-
-    // 2. Split Memos (NEW)
-    try {
-      await db.execute("ALTER TABLE splits ADD COLUMN memo TEXT");
-      print("Migrated: Added splits.memo column");
-    } catch (e) {
-      // Column likely exists
-    }
+    // Ensure Schema Integrity
+    try { await db.execute("ALTER TABLE transactions ADD COLUMN notes TEXT"); } catch (_) {}
+    try { await db.execute("ALTER TABLE splits ADD COLUMN memo TEXT"); } catch (_) {}
 
     final entityMaps = await db.query('entities', where: 'user_id = ?', whereArgs: [userId]);
     _entities = entityMaps.map((e) => Entity.fromMap(e)).toList();
@@ -59,7 +47,7 @@ class TransactionProvider with ChangeNotifier {
     triageDrafts.remove(txId);
   }
 
-  // --- MANAGEMENT ---
+  // --- ENTITY & ACCOUNT MANAGEMENT ---
 
   Future<void> updateEntity(String entityId, String newName) async {
     final db = await dbHelper.database;
@@ -73,39 +61,26 @@ class TransactionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // OPTION B: Rewrite History
   Future<void> updateAccountToTargetBalance(String accountId, String newName, double targetCurrentBalance) async {
     final db = await dbHelper.database;
-
     final txRes = await db.rawQuery('SELECT SUM(amount_cents) as total FROM transactions WHERE account_id = ?', [accountId]);
     int netFlow = (txRes.first['total'] as int?) ?? 0;
-
     int targetCents = (targetCurrentBalance * 100).round();
     int newStartingBalance = targetCents - netFlow;
 
-    await db.update(
-        'accounts',
-        {'institution_name': newName, 'starting_balance_cents': newStartingBalance},
-        where: 'account_id = ?',
-        whereArgs: [accountId]
-    );
+    await db.update('accounts', {'institution_name': newName, 'starting_balance_cents': newStartingBalance}, where: 'account_id = ?', whereArgs: [accountId]);
     notifyListeners();
   }
 
-  // OPTION A: Adjustment Transaction
   Future<void> reconcileBalance(String accountId, String accountName, double targetBalance, String justificationNote) async {
     final db = await dbHelper.database;
-
     await db.update('accounts', {'institution_name': accountName}, where: 'account_id = ?', whereArgs: [accountId]);
 
     final currentBal = await getCalculatedBalance(accountId);
     final diff = targetBalance - currentBal;
     final int diffCents = (diff * 100).round();
 
-    if (diffCents == 0) {
-      notifyListeners();
-      return;
-    }
+    if (diffCents == 0) { notifyListeners(); return; }
 
     final String type = diffCents > 0 ? "Credit" : "Debit";
     final String fullNote = justificationNote.isEmpty ? "Manual Adjustment" : justificationNote;
@@ -119,7 +94,6 @@ class TransactionProvider with ChangeNotifier {
       'status': 'FINALIZED',
       'notes': fullNote
     });
-
     notifyListeners();
   }
 
@@ -151,6 +125,7 @@ class TransactionProvider with ChangeNotifier {
     final db = await dbHelper.database;
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM splits WHERE entity_id = ?', [entityId]));
     if (count != null && count > 0) return false;
+
     await db.delete('entities', where: 'entity_id = ?', whereArgs: [entityId]);
     await loadInitialData('user_01');
     return true;
@@ -160,6 +135,7 @@ class TransactionProvider with ChangeNotifier {
     final db = await dbHelper.database;
     final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM transactions WHERE account_id = ?', [accountId]));
     if (count != null && count > 0) return false;
+
     await db.delete('accounts', where: 'account_id = ?', whereArgs: [accountId]);
     notifyListeners();
     return true;
@@ -213,9 +189,9 @@ class TransactionProvider with ChangeNotifier {
   Future<void> _refreshQueue() async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> results = await db.rawQuery('''
-      SELECT t.*, a.institution_name
+      SELECT t.*, a.institution_name 
       FROM transactions t
-      LEFT JOIN accounts a ON t.account_id = a.account_id 
+      LEFT JOIN accounts a ON t.account_id = a.account_id
       WHERE t.status = 'PENDING'
       ORDER BY t.date DESC
     ''');
@@ -223,7 +199,8 @@ class TransactionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // UPDATED: Accepts 'note' for transaction and handles 'memo' in splits
+  // --- TRIAGE ACTIONS ---
+
   Future<void> finalizeSplit({required String transactionId, required List<Map<String, dynamic>> splitRows, String? note}) async {
     final db = await dbHelper.database;
 
@@ -235,42 +212,69 @@ class TransactionProvider with ChangeNotifier {
         'amount_cents': row['amount'],
         'category': row['category'],
         'logic_type': splitRows.length > 1 ? 'WATERFALL' : 'DIRECT',
-        'memo': row['memo'] // NEW: Save split-level memo
+        'memo': row['memo']
       });
     }
 
     Map<String, dynamic> updateData = {'status': 'FINALIZED'};
-    if (note != null && note.isNotEmpty) {
-      updateData['notes'] = note;
-    }
+    if (note != null && note.isNotEmpty) updateData['notes'] = note;
 
     await db.update('transactions', updateData, where: 'transaction_id = ?', whereArgs: [transactionId]);
     clearDraft(transactionId);
     await _refreshQueue();
   }
 
-  Future<Map<String, String>?> getStrictSuggestion(String merchantName) async {
+  // --- SMART MATCH ENGINE (3-Time Rule) ---
+
+  Future<List<Map<String, dynamic>>?> getSmartMatchTemplate(String merchantName) async {
     if (!useSmartMatch) return null;
     final db = await dbHelper.database;
-    final history = await db.rawQuery('''
-      SELECT s.entity_id, s.category
-      FROM splits s
-      JOIN transactions t ON s.transaction_id = t.transaction_id
-      WHERE t.merchant_name = ?
-      ORDER BY t.date DESC
-      LIMIT 3
-    ''', [merchantName]);
 
-    if (history.length < 3) return null;
+    final List<Map<String, dynamic>> lastTxns = await db.query(
+        'transactions',
+        columns: ['transaction_id', 'amount_cents'],
+        where: 'merchant_name = ? AND status = ?',
+        whereArgs: [merchantName, 'FINALIZED'],
+        orderBy: 'date DESC',
+        limit: 3
+    );
 
-    final distinctCategories = history.map((row) => row['category']).toSet();
-    final distinctEntities = history.map((row) => row['entity_id']).toSet();
+    if (lastTxns.length < 3) return null;
 
-    if (distinctCategories.length == 1 && distinctEntities.length == 1) {
-      return {'entityId': history.first['entity_id'] as String, 'category': history.first['category'] as String};
+    List<List<Map<String, dynamic>>> historySplits = [];
+
+    for (var tx in lastTxns) {
+      final splits = await db.query(
+          'splits',
+          columns: ['entity_id', 'category', 'amount_cents'],
+          where: 'transaction_id = ?',
+          whereArgs: [tx['transaction_id']]
+      );
+      historySplits.add(splits);
     }
-    return null;
+
+    // FIXED: Use the first history item as the template to compare against others
+    final template = historySplits.first;
+
+    for (int i = 1; i < historySplits.length; i++) {
+      if (!_areSplitsStructurallyEqual(template, historySplits[i])) {
+        return null; // Pattern Broken
+      }
+    }
+
+    return template; // FIXED: Returns List<Map>, not List<List>
   }
+
+  bool _areSplitsStructurallyEqual(List<Map<String, dynamic>> a, List<Map<String, dynamic>> b) {
+    if (a.length != b.length) return false;
+
+    final setA = a.map((s) => "${s['entity_id']}|${s['category']}").toSet();
+    final setB = b.map((s) => "${s['entity_id']}|${s['category']}").toSet();
+
+    return setA.length == setB.length && setA.containsAll(setB);
+  }
+
+  // --- REPORTING METRICS ---
 
   Future<Map<String, dynamic>> getDashboardMetrics() async {
     final db = await dbHelper.database;
@@ -322,7 +326,6 @@ class TransactionProvider with ChangeNotifier {
     Map<String, double> income = {};
     Map<String, double> expenses = {};
     Map<String, double> transfers = {};
-
     double totalIn = 0;
     double totalOut = 0;
 

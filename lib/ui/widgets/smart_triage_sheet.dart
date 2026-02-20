@@ -18,7 +18,7 @@ class SmartTriageSheet extends StatefulWidget {
 class _SmartTriageSheetState extends State<SmartTriageSheet> {
   String? _selectedEntityId;
   String? _selectedCategory;
-  final TextEditingController _noteController = TextEditingController(); // Controller for Memo
+  final TextEditingController _noteController = TextEditingController();
 
   bool _isProcessing = false;
   bool _isSuggestion = false;
@@ -29,22 +29,19 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
     _checkSmartMatch();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _checkSmartMatch();
-  }
-
   Future<void> _checkSmartMatch() async {
     if (_selectedEntityId != null || _selectedCategory != null) return;
 
     final provider = context.read<TransactionProvider>();
-    final suggestion = await provider.getStrictSuggestion(widget.transaction['merchant_name']);
+    // FIXED: Updated to use the new Smart Match Template engine [Source 40]
+    final template = await provider.getSmartMatchTemplate(widget.transaction['merchant_name']);
 
-    if (suggestion != null && mounted) {
+    // Only auto-fill if it is a simple 1-to-1 match.
+    // Complex splits are handled by the "Split" button flow to avoid confusion here.
+    if (template != null && template.length == 1 && mounted) {
       setState(() {
-        _selectedEntityId = suggestion['entityId'];
-        _selectedCategory = suggestion['category'];
+        _selectedEntityId = template.first['entity_id'];
+        _selectedCategory = template.first['category'];
         _isSuggestion = true;
       });
     }
@@ -115,22 +112,18 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
               const SizedBox(height: 20),
               Text("Why these categories?", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: sjNavy)),
               const SizedBox(height: 16),
-
               _buildInfoSection("1. Tax Prep Efficiency", "If your records match the IRS Schedule C forms, filing taxes takes minutes, not hours.", Icons.timer, sjTeal),
               _buildInfoSection("2. Audit Defense", "Using these standard categories creates an instant, clean paper trail.", Icons.shield, sjTeal),
-
               const Divider(height: 40),
               Text("Mapping Modern Expenses", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: sjNavy)),
               const SizedBox(height: 10),
               _buildMappingRow("Software / SaaS", "Office Expense (or Software Subscriptions)"),
               _buildMappingRow("Web Hosting", "Advertising"),
               _buildMappingRow("Online Courses", "Education & Training"),
-
               const Divider(height: 40),
               Text("The 'Sub-Category' Strategy", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: sjNavy)),
               const SizedBox(height: 10),
               Text("Use the IRS Category as the 'Parent' and your transaction note as the 'Child'.", style: TextStyle(color: Colors.grey.shade700, height: 1.5)),
-
               const SizedBox(height: 40),
               ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("GOT IT"))
             ],
@@ -218,6 +211,7 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
                         _selectedEntityId = e.id;
                         _isSuggestion = false; // User manually overrode
                       });
+                      context.read<TransactionProvider>().saveDraft(widget.transaction['transaction_id'], entityId: e.id);
                       Navigator.pop(ctx);
                     },
                   );
@@ -281,6 +275,7 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
                         _selectedCategory = cat['name'];
                         _isSuggestion = false;
                       });
+                      context.read<TransactionProvider>().saveDraft(widget.transaction['transaction_id'], category: cat['name']);
                       Navigator.pop(ctx);
                     },
                   );
@@ -295,8 +290,8 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
 
   void _handleDirectCommit() async {
     if (_selectedEntityId == null || _selectedCategory == null) return;
-    setState(() => _isProcessing = true);
 
+    setState(() => _isProcessing = true);
     final provider = context.read<TransactionProvider>();
     final amountCents = widget.transaction['amount_cents'] as int;
 
@@ -311,7 +306,7 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
     await provider.finalizeSplit(
         transactionId: widget.transaction['transaction_id'],
         splitRows: singleSplit,
-        note: _noteController.text // Also save as transaction note
+        note: _noteController.text
     );
 
     if (mounted) {
@@ -325,7 +320,7 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
       context.read<TransactionProvider>().saveDraft(widget.transaction['transaction_id'], note: _noteController.text);
     }
 
-    Navigator.pop(context);
+    Navigator.pop(context); // Close Smart Sheet to open Bottom Sheet
     showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -340,15 +335,13 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
   Widget build(BuildContext context) {
     final tfeGreen = Theme.of(context).colorScheme.primary;
     final sjTeal = Theme.of(context).colorScheme.primary;
-
     final currency = NumberFormat.simpleCurrency();
     final int amountCents = widget.transaction['amount_cents'] as int;
     final double amount = amountCents / 100.0;
-
     final provider = context.watch<TransactionProvider>();
     final accountName = widget.transaction['institution_name'] ?? 'Unknown Acct';
-    final bool canCommit = _selectedEntityId != null && _selectedCategory != null;
 
+    final bool canCommit = _selectedEntityId != null && _selectedCategory != null;
     final bool isCredit = amountCents < 0;
     final List<Map<String, dynamic>> categoryList = isCredit ? AppConstants.creditCategories : AppConstants.debitCategories;
 
@@ -479,8 +472,8 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
               ),
             ),
 
-            // --- ADDED MISSING MEMO FIELD ---
             const SizedBox(height: 16),
+
             Text("MEMO", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade500)),
             const SizedBox(height: 8),
             TextField(
@@ -507,7 +500,6 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
                 provider.saveDraft(widget.transaction['transaction_id'], note: val);
               },
             ),
-            // --------------------------------
 
             const SizedBox(height: 32),
 
@@ -537,7 +529,6 @@ class _SmartTriageSheetState extends State<SmartTriageSheet> {
                 )
               ],
             ),
-
             const SizedBox(height: 10),
           ],
         ),
