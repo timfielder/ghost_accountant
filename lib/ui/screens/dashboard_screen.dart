@@ -55,7 +55,6 @@ class DashboardScreen extends StatelessWidget {
     // BRAND COLORS
     final tfeGreen = Theme.of(context).colorScheme.primary;
     final sjNavy = Theme.of(context).colorScheme.secondary;
-
     final currency = NumberFormat.simpleCurrency();
 
     final headerStyle = TextStyle(
@@ -101,6 +100,7 @@ class DashboardScreen extends StatelessWidget {
           final double netProfit = data['netProfit'] ?? 0.0;
           final List streams = data['streamLeaderboard'] ?? [];
           final List accounts = data['accountLeaderboard'] ?? [];
+          final String? subsidizationMessage = data['subsidizationMessage'];
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -114,6 +114,36 @@ class DashboardScreen extends StatelessWidget {
                   currency.format(netProfit),
                   style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: netProfit >= 0 ? tfeGreen : Colors.redAccent),
                 ),
+
+                // CEO PULSE ALERT [Phase 4.2]
+                if (subsidizationMessage != null) ...[
+                  const SizedBox(height: 20),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200)
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_amber_rounded, color: Colors.red.shade700),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("CEO PULSE ALERT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.2, color: Colors.red.shade800)),
+                              const SizedBox(height: 4),
+                              Text(subsidizationMessage, style: TextStyle(fontSize: 14, color: Colors.red.shade900, height: 1.4)),
+                            ],
+                          ),
+                        )
+                      ],
+                    ),
+                  )
+                ],
 
                 const SizedBox(height: 30),
 
@@ -214,6 +244,7 @@ class _PerformanceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), overflow: TextOverflow.ellipsis),
+
                   if (!isAccount) ...[
                     const SizedBox(height: 4),
                     Row(

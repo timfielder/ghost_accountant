@@ -7,7 +7,7 @@ import '../../models/entity_model.dart';
 
 class SplitRowData {
   String id;
-  String? entityId; // Nullable to allow "Select a Stream" state
+  String? entityId;
   double percent;
   String? category;
   TextEditingController amountController;
@@ -17,7 +17,7 @@ class SplitRowData {
 
   SplitRowData({
     required this.id,
-    this.entityId, // Optional
+    this.entityId,
     this.percent = 0.0,
     this.category,
     required double totalDollars,
@@ -76,7 +76,8 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
     });
   }
 
-  void _updateRow(int activeIndex, double desiredPercent) {
+  // FIXED: Added 'fromSlider' parameter to determine cursor behavior
+  void _updateRow(int activeIndex, double desiredPercent, {bool fromSlider = false}) {
     if (activeIndex == 0) return; // Anchor is calculated, not driven
 
     setState(() {
@@ -89,11 +90,15 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
       double actualPercent = desiredPercent.clamp(0.0, maxAvailable);
 
       rows[activeIndex].percent = actualPercent;
-      _recalculateAnchor();
+
+      // If the user typed a number too high, we clamp it and MUST update their text box to show the clamped number.
+      bool wasClamped = (actualPercent != desiredPercent);
+
+      _recalculateAnchor(excludeIndex: (fromSlider || wasClamped) ? null : activeIndex);
     });
   }
 
-  void _recalculateAnchor() {
+  void _recalculateAnchor({int? excludeIndex}) {
     double thievesTotal = 0.0;
     for (int i = 1; i < rows.length; i++) {
       thievesTotal += rows[i].percent;
@@ -101,14 +106,19 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
 
     double anchorPercent = (1.0 - thievesTotal).clamp(0.0, 1.0);
     rows.first.percent = anchorPercent;
-    _syncControllers();
+    _syncControllers(excludeIndex: excludeIndex);
   }
 
-  void _syncControllers() {
+  void _syncControllers({int? excludeIndex}) {
     final double totalDollars = (widget.transaction['amount_cents'] as int) / 100.0;
-    for (var row in rows) {
-      row.percentController.text = (row.percent * 100).toStringAsFixed(0);
+    for (int i = 0; i < rows.length; i++) {
+      var row = rows[i];
       row.amountController.text = (totalDollars * row.percent).toStringAsFixed(2);
+
+      // FIXED: Do not overwrite the text field if the user is actively typing in it
+      if (i != excludeIndex) {
+        row.percentController.text = (row.percent * 100).toStringAsFixed(0);
+      }
     }
   }
 
@@ -236,7 +246,6 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
       int amountCents = (dollarAmount * 100).round();
 
       if (amountCents > 0) {
-        // Validation: Must select Entity AND Category for lines with money
         if (row.entityId == null || row.category == null || row.category == 'Uncategorized') {
           setState(() => row.hasError = true);
           hasValidationError = true;
@@ -353,8 +362,6 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                     } catch (_) {}
                   }
 
-                  // ERROR STATE LOGIC
-                  // If row.hasError is TRUE, we check which field is missing.
                   final bool isStreamError = row.hasError && row.entityId == null;
 
                   return Container(
@@ -421,7 +428,6 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                             ),
                             if (!isAnchor)
                               IconButton(
-                                // UPDATED: Trash Can Icon for deleting rows
                                 icon: const Icon(Icons.delete_outline, size: 20, color: Colors.grey),
                                 onPressed: () => _removeRow(index),
                                 padding: EdgeInsets.zero,
@@ -437,18 +443,30 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                         Row(
                           children: [
                             SizedBox(
-                              width: 50, height: 36,
+                              width: 60, height: 36,
                               child: TextField(
                                 controller: row.percentController,
-                                enabled: false,
+                                // FIXED: Changed to !isAnchor to allow typing
+                                enabled: !isAnchor,
+                                // FIXED: Trigger number keyboard
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 textAlign: TextAlign.center,
                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: rowColor),
                                 decoration: InputDecoration(
                                     suffixText: "%",
-                                    suffixStyle: const TextStyle(fontSize: 10, color: Colors.grey),
+                                    suffixStyle: const TextStyle(fontSize: 12, color: Colors.grey),
                                     contentPadding: const EdgeInsets.only(bottom: 12),
                                     border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey.shade300))
                                 ),
+                                // FIXED: Updates the logic engine on every keystroke
+                                onChanged: (val) {
+                                  if (val.isEmpty) {
+                                    _updateRow(index, 0.0, fromSlider: false);
+                                    return;
+                                  }
+                                  double parsed = double.tryParse(val) ?? 0.0;
+                                  _updateRow(index, parsed / 100.0, fromSlider: false);
+                                },
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -464,7 +482,8 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                                 child: Slider(
                                   value: row.percent,
                                   min: 0.0, max: 1.0,
-                                  onChanged: isAnchor ? null : (val) => _updateRow(index, val),
+                                  // FIXED: Added fromSlider tag to sync text field correctly
+                                  onChanged: isAnchor ? null : (val) => _updateRow(index, val, fromSlider: true),
                                 ),
                               ),
                             ),
@@ -483,7 +502,6 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                                   padding: const EdgeInsets.symmetric(horizontal: 10),
                                   decoration: BoxDecoration(
                                       color: Colors.white,
-                                      // Specific Border Error for Category Field
                                       border: Border.all(
                                           color: row.hasError && row.category == null ? Colors.red : Colors.grey.shade300,
                                           width: row.hasError && row.category == null ? 1.5 : 1.0
@@ -497,7 +515,6 @@ class _TriageBottomSheetState extends State<TriageBottomSheet> {
                                             row.category ?? (row.hasError ? "Required Field" : "Select Category"),
                                             style: TextStyle(
                                                 fontSize: 13,
-                                                // Specific Text Color Error for Category Field
                                                 color: row.category == null ? (row.hasError ? Colors.red : Colors.grey) : Colors.black87,
                                                 fontWeight: row.category == null && row.hasError ? FontWeight.bold : FontWeight.normal
                                             ),

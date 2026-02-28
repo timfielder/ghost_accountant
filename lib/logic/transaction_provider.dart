@@ -253,7 +253,6 @@ class TransactionProvider with ChangeNotifier {
       historySplits.add(splits);
     }
 
-    // FIXED: Use the first history item as the template to compare against others
     final template = historySplits.first;
 
     for (int i = 1; i < historySplits.length; i++) {
@@ -262,7 +261,7 @@ class TransactionProvider with ChangeNotifier {
       }
     }
 
-    return template; // FIXED: Returns List<Map>, not List<List>
+    return template;
   }
 
   bool _areSplitsStructurallyEqual(List<Map<String, dynamic>> a, List<Map<String, dynamic>> b) {
@@ -274,7 +273,7 @@ class TransactionProvider with ChangeNotifier {
     return setA.length == setB.length && setA.containsAll(setB);
   }
 
-  // --- REPORTING METRICS ---
+  // --- REPORTING METRICS & CEO PULSE ---
 
   Future<Map<String, dynamic>> getDashboardMetrics() async {
     final db = await dbHelper.database;
@@ -289,12 +288,28 @@ class TransactionProvider with ChangeNotifier {
     for (var entity in entities) {
       String id = entity['entity_id'] as String;
       String name = entity['entity_name'] as String;
-      double entityNet = 0;
-      for (var s in splits) {
-        if (s['entity_id'] == id) entityNet += (s['amount_cents'] as int);
-      }
-      streamLeaderboard.add({'id': id, 'name': name, 'net': entityNet / 100});
+
+      final entitySplits = splits.where((s) => s['entity_id'] == id).toList();
+      final pnlData = _calculatePnLFromSplits(entitySplits);
+      double entityNet = pnlData['netIncome'];
+
+      streamLeaderboard.add({'id': id, 'name': name, 'net': entityNet});
       totalNet += entityNet;
+    }
+
+    // SUBSIDIZATION ENGINE (CEO Pulse)
+    String? subsidizationMessage;
+    final lossMakers = streamLeaderboard.where((s) => s['net'] < 0).toList();
+    final profitMakers = streamLeaderboard.where((s) => s['net'] > 0).toList();
+
+    if (lossMakers.isNotEmpty && profitMakers.isNotEmpty) {
+      lossMakers.sort((a, b) => a['net'].compareTo(b['net']));
+      profitMakers.sort((a, b) => b['net'].compareTo(a['net']));
+
+      final biggestLoser = lossMakers.first;
+      final biggestWinner = profitMakers.first;
+
+      subsidizationMessage = "Warning: '${biggestWinner['name']}' profits are currently subsidizing losses in '${biggestLoser['name']}'.";
     }
 
     final txs = await db.query('transactions');
@@ -304,12 +319,23 @@ class TransactionProvider with ChangeNotifier {
       int starting = (acct['starting_balance_cents'] as int?) ?? 0;
       double currentBalance = starting.toDouble();
       for (var tx in txs) {
-        if (tx['account_id'] == acctId) currentBalance += (tx['amount_cents'] as int);
+        // FIXED: Bank logic formatting. Negative is a deposit, Positive is an expense
+        int amount = tx['amount_cents'] as int;
+        if (amount < 0) {
+          currentBalance += amount.abs();
+        } else {
+          currentBalance -= amount;
+        }
       }
       accountLeaderboard.add({'id': acctId, 'name': name, 'net': currentBalance / 100});
     }
 
-    return {'netProfit': totalNet / 100, 'streamLeaderboard': streamLeaderboard, 'accountLeaderboard': accountLeaderboard};
+    return {
+      'netProfit': totalNet,
+      'streamLeaderboard': streamLeaderboard,
+      'accountLeaderboard': accountLeaderboard,
+      'subsidizationMessage': subsidizationMessage
+    };
   }
 
   Future<Map<String, dynamic>> getEntityPnL(String entityId) async {
@@ -331,11 +357,14 @@ class TransactionProvider with ChangeNotifier {
 
     for (var row in results) {
       double amount = (row['amount_cents'] as int) / 100.0;
-      netIncome += amount;
-      if (amount >= 0) {
-        totalIn += amount;
+
+      // FIXED: Plaid/Teller Negative values are Credits/Deposits, Positive are Debits/Expenses
+      if (amount < 0) {
+        totalIn += amount.abs();
+        netIncome += amount.abs();
       } else {
-        totalOut += amount.abs();
+        totalOut += amount;
+        netIncome -= amount;
       }
     }
     income['Deposits / Credits'] = totalIn;
@@ -351,7 +380,9 @@ class TransactionProvider with ChangeNotifier {
 
     for (var row in rows) {
       String category = row['category'] as String;
-      double amount = (row['amount_cents'] as int) / 100.0;
+
+      // FIXED: Take the absolute value so the CATEGORY dictates whether it adds or subtracts from profit
+      double amount = ((row['amount_cents'] as int) / 100.0).abs();
       String type = _getCategoryType(category);
 
       if (type == 'INCOME') {

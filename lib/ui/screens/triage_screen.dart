@@ -44,7 +44,7 @@ class TriageScreen extends StatelessWidget {
           final accounts = await provider.getAccounts();
           final String accountId = accounts.isNotEmpty ? accounts.first['account_id'] : 'acct_manual';
 
-          final int amountCents = 4500 + (DateTime.now().millisecondsSinceEpoch % 15000);
+          final int amountCents = 7500; // Simulates a $75.00 Charge
           final String txId = 'tx_${DateTime.now().millisecondsSinceEpoch}';
           final double amountDol = amountCents / 100.0;
           final String merchant = "Amazon Web Services";
